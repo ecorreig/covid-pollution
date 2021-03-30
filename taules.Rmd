@@ -1,0 +1,102 @@
+---
+title: "Anàlisi contaminació"
+author: "Eudald"
+date: "19/3/2021"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+library(kableExtra)
+library(compareGroups)
+library(forcats)
+library(readxl)
+library(dplyr)
+```
+
+```{r}
+ciutats <- c(
+  "01" = "Tarragona",
+  "02" = "Alcover",
+  "03" = "Reus",
+  "04" = "Tarragona",
+  "05" = "Vilafranca del Penedès",
+  "06" = "Amposta",
+  "07" = "Mataró",
+  "08" = "Barcelona",
+  "09" = "Terrassa",
+  "10" = "Barcelona",
+  "11" = "Terrassa",
+  "12" = "Girona",
+  "13" = "Manresa",
+  "14" = "Sant Feliu de Llobregat",
+  "16" = "L'Hospitalet de Llobregat",
+  "17" = "Santa Coloma de Gramenet",
+  "19" = "Barcelona",
+  "20" = "Barcelona",
+  "21" = "Lleida"
+)
+fora <- c("Santa Coloma de Gramenet", "Lleida", "L'Hospitalet de Llobregat")
+```
+
+```{r}
+df <- read_excel("bbdd_neta.xlsx") %>%
+  mutate(
+    poblacio = ciutats[hospital]
+  ) %>%
+  inner_join(
+    read_excel("contaminació_final.xlsx")
+  ) %>%
+  filter(!poblacio %in% fora)
+```
+
+```{r}
+tt <- df %>%
+  select(-c(intensitat, hospital, `COVID-19 OMS INDEX`, Estatines_ret, Mort)) %>%
+  rename(Població = poblacio) %>%
+  mutate(Severitat = fct_relevel(Severitat, c("Mild", "Severe", "Death")))
+```
+
+Taula 1:
+
+Separació per severitat.
+
+```{r}
+res <- compareGroups(Severitat ~ ., data = tt, method = 4)
+tab <- createTable(res)
+```
+
+```{r}
+openxlsx::write.xlsx(as.data.frame(tab$descr) %>% tibble::rownames_to_column(), "taula1.xlsx")
+```
+
+
+Taula S1
+
+Separació per ciutat:
+
+Ho hem de fer de 5 en 5:
+
+```{r}
+ciutats_finals <- tt %>% distinct(Població) %>% pull(Població)
+res <- compareGroups(Població ~ ., data = tt %>% filter(Població %in% ciutats_finals[1:5]), method = 4)
+tabs1 <- createTable(res, show.p.overall = F)
+res <- compareGroups(Població ~ ., data = tt %>% filter(Població %in% ciutats_finals[6:10]), method = 4)
+tabs2 <- createTable(res, show.p.overall = F)
+res <- compareGroups(Població ~ ., data = tt %>% filter(Població %in% ciutats_finals[11:14]), method = 4)
+tabs3 <- createTable(res, show.p.overall = F)
+```
+
+```{r}
+tot <- as.data.frame(tabs1$descr) %>%
+  tibble::rownames_to_column() %>%
+  inner_join(as.data.frame(tabs2$descr) %>%
+               tibble::rownames_to_column()) %>%
+  inner_join(as.data.frame(tabs3$descr) %>%
+               tibble::rownames_to_column())
+
+openxlsx::write.xlsx(tot, "taula_ciutats.xlsx")
+```
+
+

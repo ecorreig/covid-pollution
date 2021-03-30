@@ -1,0 +1,187 @@
+---
+title: "Models"
+author: "Eudald"
+date: "19/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+library(readxl)
+library(dplyr)
+library(healthcareai)
+source("corbes_roc.R")
+source("panels.R", encoding = "utf8")
+set.seed(123)
+```
+
+
+# Mortalitat
+
+```{r}
+mort <- readxl::read_excel("mort.xlsx") %>% 
+  mutate(
+    Tabac = ifelse(Tabac == "Sí", "Sí", "No"),
+    across(where(is.character), function(x) stringr::str_replace_all(x, "Sí", "Yes")),
+    Sexe = ifelse(Sexe == "Dona", "Female", "Male"),
+    across(where(is.character), stringr::str_to_title),
+    across(where(is.character), as.factor),
+    NO2_cat = forcats::fct_relevel(NO2_cat, "Low"),
+    PM10_cat = forcats::fct_relevel(PM10_cat, "Low"),
+    Sexe = forcats::fct_relevel(Sexe, "Male")
+    ) %>%
+  select(-SO2_cat) %>%
+  rename(
+    "Age" = "Edat", "Smoking" = "Tabac", "Obesity" = "Obesitat",  "Sex" = "Sexe",
+    "Cancer" = "Càncer", "NO" = "NO2_cat", "PM" = "PM10_cat", 
+    "High Blood Pressure" = "HTA", "Coronary Heart Disease" = "Ant CI", 
+    "Stroke" = "Ant Ictus", "Peripheral Arterial Disease" = "Ant MVP",
+    "Heart Failure" = "Ant Ins Card", "COPD/Asthma" = "Ant MPOC/Asma",
+    "Chronic Liver Disease" = "Ant MHepC", "Chronic Kidney Disease" = "Ant MRC",
+    "Rheumatologic Disease" = "Ant MReu"
+  )
+```
+
+```{r}
+mod <- glm(Mort ~ ., mort , family = "binomial")
+```
+
+```{r}
+png("plots/mort_coefs.png", width = 1000, height = 600)
+forest_model(mod, panels = panels, hide_ref = T, hide_yes = T)
+dev.off()
+```
+
+# Severitat
+
+```{r}
+severe <- readxl::read_excel("severitat.xlsx") %>%
+  mutate(
+    Tabac = ifelse(Tabac == "Sí", "Sí", "No"),
+    across(where(is.character), function(x) stringr::str_replace_all(x, "Sí", "Yes")),
+    Sexe = ifelse(Sexe == "Dona", "Female", "Male"),
+    across(where(is.character), stringr::str_to_title),
+    across(where(is.character), as.factor),
+    NO2_cat = forcats::fct_relevel(NO2_cat, "Low"),
+    PM10_cat = forcats::fct_relevel(PM10_cat, "Low"),
+    Sexe = forcats::fct_relevel(Sexe, "Male")
+    ) %>%
+  select(-SO2_cat) %>%
+  rename(
+    "Age" = "Edat", "Smoking" = "Tabac", "Obesity" = "Obesitat",  "Sex" = "Sexe",
+    "Cancer" = "Càncer", "NO" = "NO2_cat", "PM" = "PM10_cat", 
+    "High Blood Pressure" = "HTA", "Coronary Heart Disease" = "Ant CI", 
+    "Stroke" = "Ant Ictus", "Peripheral Arterial Disease" = "Ant MVP",
+    "Heart Failure" = "Ant Ins Card", "COPD/Asthma" = "Ant MPOC/Asma",
+    "Chronic Liver Disease" = "Ant MHepC", "Chronic Kidney Disease" = "Ant MRC",
+    "Rheumatologic Disease" = "Ant MReu"
+  )
+```
+
+```{r}
+mod <- glm(Severitat ~ ., severe , family = "binomial")
+```
+
+```{r}
+png("plots/severitat_coefs.png", width = 1000, height = 600)
+forest_model(mod, panels = panels, hide_ref = T, hide_yes = T)
+dev.off()
+```
+
+# Percentatge de morts per hospital
+
+```{r}
+df <- readxl::read_excel("dades/percentages.xlsx") %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  select(Edat, per_dones, per_tabac, per_diabetis, per_cancer, "PM" = "PM10", per_morts)
+```
+
+```{r}
+mod <- lm(per_morts ~ ., df)
+val <- coef(mod)["PM"]
+```
+
+```{r}
+df <- df %>% 
+  mutate(across(everything(), scale))
+```
+
+```{r}
+mod <- lm(per_morts ~ ., df)
+```
+
+```{r}
+update_names <- function(variable) {
+  case_when(
+      variable == "Edat" ~ "Age",
+      variable == "per_cancer" ~ "Cancer",
+      variable == "per_diabetis" ~ "Diabetis",
+      variable == "per_tabac" ~ "Smoking",
+      variable == "per_dones" ~ "Sex",
+      T ~ variable
+    )
+}
+```
+
+
+```{r}
+fm <- forest_model(mod, panels = panels)
+p <- ggplot_build(fm)
+p$data[[5]]$label <- update_names(p$data[[5]]$label)
+q <- ggplot_gtable(p)
+png("plots/percentage_coefs.png", width = 1000, height = 400)
+plot(q)
+dev.off()
+
+```
+
+Per cada increment d'1 punt de PM10 el percentatge de morts creix un `r val*100`%
+
+# Percentatge de severs per hospital
+
+```{r}
+df <- readxl::read_excel("dades/percentages_severitat.xlsx") %>%
+  mutate(across(where(is.character), as.numeric)) %>%
+  select(Edat, per_dones, per_tabac, per_diabetis, per_cancer, "PM" = "PM10", per_severs)
+```
+
+```{r}
+mod <- lm(per_severs ~ ., df)
+val <- coef(mod)["PM"]
+```
+
+```{r}
+df <- df %>% 
+  mutate(across(everything(), scale))
+```
+
+```{r}
+mod <- lm(per_severs ~ ., df)
+```
+
+```{r}
+update_names <- function(variable) {
+  case_when(
+      variable == "Edat" ~ "Age",
+      variable == "per_cancer" ~ "Cancer",
+      variable == "per_diabetis" ~ "Diabetis",
+      variable == "per_tabac" ~ "Smoking",
+      variable == "per_dones" ~ "Sex",
+      T ~ variable
+    )
+}
+```
+
+
+```{r}
+fm <- forest_model(mod, panels = panels)
+p <- ggplot_build(fm)
+p$data[[5]]$label <- update_names(p$data[[5]]$label)
+q <- ggplot_gtable(p)
+png("plots/percentage_coefs_severitat.png", width = 1000, height = 400)
+plot(q)
+dev.off()
+
+```
+
+Per cada increment d'1 punt de PM10 el percentatge de morts creix un `r val*100`%

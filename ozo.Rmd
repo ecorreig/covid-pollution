@@ -1,0 +1,170 @@
+---
+title: "o3"
+author: "Eudald"
+date: "26/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+```
+
+```{r}
+url <- "https://analisi.transparenciacatalunya.cat/resource/tasf-thgu.json"
+q <- "?$where= data >= '2014-01-01' and data <= '2020-03-13'"
+l <- paste0(url, q)
+data <- read.socrata(l, stringsAsFactors = F)
+```
+
+```{r}
+contaminants <- c("O3", "NO", "NO2", "NOX", "SO2", "PM10")
+tgn <- c(
+  "Tarragona (Bonavista)",
+  "Tarragona (Parc de la Ciutat)",
+  "Tarragona (Sant Salvador)",
+  "Tarragona (Universitat Laboral)"
+)
+bcn <- c(
+  "Barcelona (Ciutadella)",
+  "Barcelona (Eixample)",
+  "Barcelona (Gràcia - Sant Gervasi)",
+  "Barcelona (Observatori Fabra)",
+  "Barcelona (Palau Reial)",
+  "Barcelona (Parc Vall Hebron)",
+  "Barcelona (Poblenou)",
+  "Barcelona (Sants)"
+)
+hospitals <- c(
+  "01" = tgn,
+  "02" = "Alcover",
+  "03" = "Reus",
+  "04" = tgn,
+  "05" = "Vilafranca del Penedès",
+  "06" = "Amposta",
+  "07" = "Mataró",
+  "08" = bcn,
+  "09" = "Terrassa",
+  "10" = bcn,
+  "11" = "Terrassa",
+  "12" = "Girona (Escola de Música)",
+  "13" = "Manresa",
+  "14" = "Sant Feliu de Ll. (CEIP Marti i Pol)",
+  "16" = "L'Hospitalet de Llobregat",
+  "17" = "Santa Coloma de Gramenet",
+  "19" = bcn,
+  "20" = bcn,
+  "21" = "Lleida"
+)
+hospitals2 <- c(
+  "01" = "Tarragona",
+  "02" = "Alcover",
+  "03" = "Reus",
+  "04" = "Tarragona",
+  "05" = "Vilafranca del Penedès",
+  "06" = "Amposta",
+  "07" = "Mataró",
+  "08" = "Barcelona",
+  "09" = "Terrassa",
+  "10" = "Barcelona",
+  "11" = "Terrassa",
+  "12" = "Girona",
+  "13" = "Manresa",
+  "14" = "Sant Feliu de Llobregat",
+  "16" = "L'Hospitalet de Llobregat",
+  "17" = "Santa Coloma de Gramenet",
+  "19" = "Barcelona",
+  "20" = "Barcelona",
+  "21" = "Lleida"
+)
+```
+
+```{r}
+estacions <- c(
+  "Alcover" = "Alcover", 
+  "Amposta" = "Amposta",
+  "Barcelona (Ciutadella)" = "Barcelona",
+  "Barcelona (Eixample)" = "Barcelona",
+  "Barcelona (Gràcia - Sant Gervasi)" = "Barcelona",
+  "Barcelona (Observatori Fabra)" = "Barcelona",
+  "Barcelona (Palau Reial)" = "Barcelona",
+  "Barcelona (Parc Vall Hebron)" = "Barcelona",
+  "Barcelona (Poblenou)" = "Barcelona",
+  "Barcelona (Sants)" = "Barcelona",
+  "Tarragona (Bonavista)" = "Tarragona",
+  "Tarragona (Parc de la Ciutat)" = "Tarragona",
+  "Tarragona (Sant Salvador)" = "Tarragona",
+  "Tarragona (Universitat Laboral)" = "Tarragona",
+  "Reus" = "Reus",
+  "Vilafranca del Penedès" = "Vilafranca del Penedès",
+  "Mataró" = "Mataró",
+  "Terrassa" = "Terrassa",
+  "Girona (Escola de Música)" = "Girona",
+  "Manresa" = "Manresa",
+  "Sant Feliu de Ll. (CEIP Marti i Pol)" = "Sant Feliu de Llobregat",
+  "L'Hospitalet de Llobregat" = "L'Hospitalet de Llobregat",
+  "Santa Coloma de Gramenet" = "Santa Coloma de Gramenet",
+  "Lleida" = "Lleida"
+  )
+```
+
+```{r}
+tall <- 120
+aa <- data %>% 
+  filter(contaminant == "O3") %>%
+  select(c(data, nom_estacio, h12:h19)) %>%
+  mutate(across(starts_with("h"), as.numeric)) %>%
+  mutate(
+    m = rowMeans(.[,-1:-2], na.rm=T)
+  )
+bb <- aa %>% 
+  filter(!is.na(aa %>% pull(m))) %>%
+  mutate(
+    passa = as.factor(case_when(
+      m < tall ~ "No",
+      T ~ "Sí"
+    )
+  )
+  )
+
+cc <- bb %>%
+  group_by(nom_estacio, floor_date(data, "year")) %>%
+  summarise(passa_si = sum(passa == "Sí"))
+
+dd <- cc %>% 
+  filter(sino == "Sí") %>%
+  mutate(
+    risc = as.factor(case_when(
+      passa > 25 ~ "Sí",
+      T ~ "No"
+    ))
+  )
+ee <- dd %>% 
+  group_by(nom_estacio) %>%
+  summarise(num_mes_25 = sum(risc == "Sí")) %>%
+  filter(nom_estacio %in% names(estacions))
+```
+
+```{r, out.width="100%"}
+library(plotly)
+data %>% 
+  filter(contaminant == "O3", nom_estacio %in% names(estacions)) %>%
+  pivot_longer(starts_with("h")) %>%
+  mutate(
+    name = as.factor(name),
+    nom_estacio = as.factor(nom_estacio),
+    value = as.numeric(value)
+  ) %>% 
+  group_by(nom_estacio, name) %>%
+  summarise(across(value, function(x) mean(x, na.rm = T))) %>%
+  group_by(nom_estacio) %>%
+  plot_ly(x = ~ name, y = ~value, color= ~ nom_estacio, type = 'scatter', mode = 'lines')
+```
+
+```{r}
+
+```
+

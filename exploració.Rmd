@@ -1,0 +1,144 @@
+---
+title: "exploració"
+author: "Eudald"
+date: "20/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = F)
+library(dplyr)
+library(glmnet)
+library(ggplot2)
+library(cvAUC)
+```
+
+```{r}
+df <- readxl::read_excel("bbdd_neta.xlsx") %>%
+  mutate(across(is.character, as.factor))
+```
+
+```{r}
+summary(df)
+```
+
+```{r}
+xray::anomalies(df)
+```
+
+```{r}
+joves <- df %>% filter(Edat < 65) %>%
+  mutate(
+    contaminació = case_when(
+      hospital %in% c("01", "02", "03", "04") ~ "Petro",
+      hospital %in% c("08", "09", "10", "11", "14", "16", "17", "19", "20") ~ "B-AMB",
+      T ~ "A-No"
+    ),
+    Mort = as.factor(Mort)
+  )
+```
+
+
+```{r}
+gmodels::CrossTable(joves$contaminació, joves$Severitat, chisq = T)
+```
+
+```{r}
+mod <- glm(Mort ~ contaminació*Edat - Edat + Sexe + Tabac + Diabetes + Obesitat + Càncer, joves, family = "binomial")
+summary(mod)
+```
+
+```{r}
+joves %>%
+  ggplot(aes(x = contaminació, y = Edat, colour = Mort)) + 
+  geom_boxplot() + 
+  theme_bw()
+```
+
+```{r}
+library(healthcareai)
+library(dplyr)
+```
+
+```{r}
+dfj <- joves %>%
+  select(c(contaminació, Edat, Sexe, Tabac, Diabetes, Obesitat, Càncer, Mort))
+```
+
+```{r}
+ml <- machine_learn(dfj, outcome = "Mort", positive_class = "Sí", impute = T)
+ml
+```
+
+```{r}
+interpret(ml) %>% 
+  plot()
+```
+
+```{r}
+get_variable_importance(ml) %>%
+  plot()
+```
+
+```{r}
+train = sample(1:nrow(dfj), round(nrow(dfj)*.8))
+test = -train
+```
+
+```{r}
+dfj$Sexe <- as.factor(dfj$Sexe)
+dfj$Tabac <- as.factor(dfj$Tabac)
+dfj$Diabetes <- as.factor(dfj$Diabetes)
+dfj$Obesitat <- as.factor(dfj$Obesitat)
+dfj$contaminació <- as.factor(dfj$contaminació)
+dfj$Càncer <- as.factor(dfj$Càncer)
+dfj$contaminació <- relevel(dfj$contaminació, "A-No")
+```
+
+
+```{r}
+ms <- missForest::missForest(dfj)
+dfi <- ms$ximp
+```
+
+
+```{r}
+x<- dfi[,-c(8)]
+y<- dfi[,8]
+data<-cbind(x,y)
+x_train <- x[train,]
+y_train <- data$y[train]
+x_test <- x[test,]
+y_test <- data$y[test]
+model <- model.matrix(y~. + contaminació*Edat - Edat , data=data[train,])
+fit <- cv.glmnet(model,y_train,alpha=1, family="binomial")
+```
+
+Anem a veure com són i com prediuen els dos models:
+
+Model complert, amb 34 variables:
+---
+
+Els predictors són:
+
+```{r}
+finalc = predict(fit, type='coefficients', s = "lambda.min")[1:13,]
+#finalc
+ffc = finalc[finalc!=0]
+ffc
+```
+
+Veiem que els cortis estan en els predictors.
+
+Mirem com de bé predim la mortalitat en aquest model:
+
+```{r}
+lambda_min<-fit$lambda.min
+newX <- model.matrix(~. + contaminació*Edat - Edat,data=x_test)
+fit_test<-predict(fit,s=lambda_min, newx=newX, type='response')
+fit.pred=rep(0,nrow(x_test))
+fit.pred[fit_test >.5]=1
+ttt=table(fit.pred, y_test)
+rend = (ttt[1]+ttt[4])/sum(ttt)
+ttt
+```

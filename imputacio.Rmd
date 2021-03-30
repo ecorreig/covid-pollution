@@ -1,0 +1,178 @@
+---
+title: "Anàlisi"
+author: "Eudald"
+date: "5/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+library(readxl)
+library(dplyr)
+library(healthcareai)
+set.seed(1234)
+```
+
+```{r}
+ciutats <- c(
+  "01" = "Tarragona",
+  "02" = "Alcover",
+  "03" = "Reus",
+  "04" = "Tarragona",
+  "05" = "Vilafranca del Penedès",
+  "06" = "Amposta",
+  "07" = "Mataró",
+  "08" = "Barcelona",
+  "09" = "Terrassa",
+  "10" = "Barcelona",
+  "11" = "Terrassa",
+  "12" = "Girona",
+  "13" = "Manresa",
+  "14" = "Sant Feliu de Llobregat",
+  "16" = "L'Hospitalet de Llobregat",
+  "17" = "Santa Coloma de Gramenet",
+  "19" = "Barcelona",
+  "20" = "Barcelona",
+  "21" = "Lleida"
+)
+fora <- c("Santa Coloma de Gramenet", "Lleida", "L'Hospitalet de Llobregat")
+```
+
+
+```{r}
+df <- read_excel("bbdd_neta.xlsx") %>%
+  mutate(
+    poblacio = ciutats[hospital]
+  ) %>%
+  inner_join(
+    read_excel("contaminació_final.xlsx")
+  ) %>%
+  filter(!poblacio %in% fora)
+```
+
+```{r}
+dfj <- df %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(
+    NO2_cat = case_when(
+      NO2 < 40 ~ "low",
+      T ~ "high"
+    ),
+    SO2_cat = case_when(
+      SO2 < 2.0 ~ "low",
+      T ~ "high"
+    ),
+    PM10_cat = case_when(
+      PM10 < 20 ~ "low",
+      T ~ "high"
+    ),
+    NO2_cat = as.factor(NO2_cat),
+    SO2_cat = as.factor(SO2_cat),
+    PM10_cat = as.factor(PM10_cat)
+  ) %>%
+    select(Edat:Càncer, Mort, NO2_cat, SO2_cat, PM10_cat)
+```
+
+```{r}
+bb <- missForest::missForest(as.data.frame(dfj))
+aa <- bb$ximp %>%
+  mutate(across(where(is.numeric), scale))
+```
+
+```{r}
+writexl::write_xlsx(aa, "mort.xlsx")
+```
+
+# Severitat
+
+```{r}
+dfj <- df %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(
+    NO2_cat = case_when(
+      NO2 < 40 ~ "low",
+      T ~ "high"
+    ),
+    SO2_cat = case_when(
+      SO2 < 2.0 ~ "low",
+      T ~ "high"
+    ),
+    PM10_cat = case_when(
+      PM10 < 20 ~ "low",
+      T ~ "high"
+    ),
+    NO2_cat = as.factor(NO2_cat),
+    SO2_cat = as.factor(SO2_cat),
+    PM10_cat = as.factor(PM10_cat),
+    Severitat = case_when(
+      Severitat == "Mild" ~ "Mild",
+      T ~ "Severe"
+    ),
+    Severitat = as.factor(Severitat)
+  ) %>% 
+    select(Edat:Càncer, Severitat, NO2_cat, SO2_cat, PM10_cat)
+```
+
+```{r}
+bb <- missForest::missForest(as.data.frame(dfj))
+aa <- bb$ximp %>%
+  mutate(across(where(is.numeric), scale))
+```
+
+```{r}
+writexl::write_xlsx(aa, "severitat.xlsx")
+```
+
+# Percentatge de morts per hospital
+
+```{r}
+tt <- df %>% 
+    select(c(Edat, Sexe, Tabac, Diabetes, Obesitat, Càncer, Mort, NO, NO2, PM10, NOX, O3, SO2, hospital)) %>%
+  mutate(across(is.character, as.factor))
+           
+cc <- missForest::missForest(as.data.frame(tt))
+mh <- cc$ximp %>%
+  group_by(hospital) %>%
+  summarise(
+    per_morts = sum(Mort == "Sí") / sum(Mort != ""),
+    per_tabac = sum(Tabac == "Sí") / sum(Tabac != ""),
+    per_cancer = sum(Càncer == "Sí") / sum(Càncer != ""),
+    per_diabetis = sum(Diabetes == "Sí") / sum(Diabetes != ""),
+    per_obesitat = sum(Obesitat == "Sí") / sum(Obesitat != ""),
+    per_dones = sum(Sexe == "Dona") / sum(Sexe != ""),
+    across(c(NO, NO2, PM10, NOX, O3, SO2, Edat), mean)
+    ) %>%
+  select(-hospital)
+```
+
+```{r}
+openxlsx::write.xlsx(mh, "percentages.xlsx")
+```
+
+# Percentatge de severs per hospital
+
+```{r}
+tt <- df %>%
+  mutate(Severitat = ifelse(Severitat == "Mild", "Mild", "Severe")) %>%
+    select(c(Edat, Sexe, Tabac, Diabetes, Obesitat, Càncer, Severitat, 
+             NO, NO2, PM10, NOX, O3, SO2, hospital)) %>%
+  mutate(across(is.character, as.factor))
+           
+cc <- missForest::missForest(as.data.frame(tt))
+mh <- cc$ximp %>%
+  group_by(hospital) %>%
+  summarise(
+    per_severs = sum(Severitat == "Severe") / sum(Severitat != ""),
+    per_tabac = sum(Tabac == "Sí") / sum(Tabac != ""),
+    per_cancer = sum(Càncer == "Sí") / sum(Càncer != ""),
+    per_diabetis = sum(Diabetes == "Sí") / sum(Diabetes != ""),
+    per_obesitat = sum(Obesitat == "Sí") / sum(Obesitat != ""),
+    per_dones = sum(Sexe == "Dona") / sum(Sexe != ""),
+    across(c(NO, NO2, PM10, NOX, O3, SO2, Edat), mean)
+    ) %>%
+  select(-hospital)
+```
+
+```{r}
+openxlsx::write.xlsx(mh, "percentages_severitat.xlsx")
+```
