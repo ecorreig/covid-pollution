@@ -1,0 +1,6 @@
+*.xlsx
+*.html
+*.shp
+*.Rproj
+.Rhistory
+.Rproj.user/
